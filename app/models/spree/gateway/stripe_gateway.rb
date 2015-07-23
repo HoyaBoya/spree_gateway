@@ -67,7 +67,9 @@ module Spree
       options = {}
       options[:description] = "Spree Order ID: #{gateway_options[:order_id]}"
       options[:currency] = gateway_options[:currency]
-      options[:destination] = preferred_destination if preferred_destination.present?
+      options[:destination] = preferred_destination
+
+      puts "HERE IS ARE THE OPTIONS #{options}"
 
       if customer = creditcard.gateway_customer_profile_id
         options[:customer] = customer
