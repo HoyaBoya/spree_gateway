@@ -28,6 +28,30 @@ describe Spree::Gateway::StripeGateway do
     subject.stub(:provider).and_return provider
   end
 
+  describe '#options_for_purchase_or_auth' do
+    let(:money) { 'foo' }
+    let(:destination) { 'destination' }
+    let(:creditcard) { mock }
+    let(:gateway_options) { {} }
+
+    before do
+      creditcard.stub(:gateway_customer_profile_id).and_return(1)
+      creditcard.stub(:gateway_payment_profile_id).and_return(2)
+      subject.unstub(:options_for_purchase_or_auth)
+    end
+
+    context 'when destination is set' do
+      before do
+        subject.set_preference :destination, destination
+      end
+
+      it 'should return the destination in options' do
+        results = subject.send(:options_for_purchase_or_auth, money, creditcard, gateway_options)
+        expect(results.last[:destination]).to eq('foo')
+      end
+    end
+  end
+
   describe '#create_profile' do
     context 'with an order that has a bill address' do
       let(:bill_address) {

@@ -2,6 +2,7 @@ module Spree
   class Gateway::StripeGateway < Gateway
     preference :secret_key, :string
     preference :publishable_key, :string
+    preference :destination, :string
 
     def method_type
       'stripe'
@@ -66,6 +67,7 @@ module Spree
       options = {}
       options[:description] = "Spree Order ID: #{gateway_options[:order_id]}"
       options[:currency] = gateway_options[:currency]
+      options[:destination] = preferred_destination if preferred_destination.present?
 
       if customer = creditcard.gateway_customer_profile_id
         options[:customer] = customer
