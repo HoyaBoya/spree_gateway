@@ -3,11 +3,10 @@ require 'spec_helper'
 describe Spree::Gateway::StripeGateway do
   let(:secret_key) { 'key' }
   let(:email) { 'customer@example.com' }
-  let(:source) { Spree::CreditCard.new }
 
   let(:payment) {
     double('Spree::Payment',
-      source: source,
+      source: double('Source', gateway_customer_profile_id: nil).as_null_object,
       order: double('Spree::Order',
         email: email,
         bill_address: bill_address
@@ -24,16 +23,36 @@ describe Spree::Gateway::StripeGateway do
   end
 
   before do
-    subject.preferences = { secret_key: secret_key }
+    subject.set_preference :secret_key, secret_key
     subject.stub(:options_for_purchase_or_auth).and_return(['money','cc','opts'])
     subject.stub(:provider).and_return provider
   end
 
-  describe '#create_profile' do
+  describe '#options_for_purchase_or_auth' do
+    let(:money) { 'foo' }
+    let(:destination) { 'destination' }
+    let(:creditcard) { mock }
+    let(:gateway_options) { {} }
+
     before do
-      payment.source.stub(:update_attributes!)
+      creditcard.stub(:gateway_customer_profile_id).and_return(1)
+      creditcard.stub(:gateway_payment_profile_id).and_return(2)
+      subject.unstub(:options_for_purchase_or_auth)
     end
 
+    context 'when destination is set' do
+      before do
+        subject.set_preference :destination, destination
+      end
+
+      it 'should return the destination in options' do
+        results = subject.send(:options_for_purchase_or_auth, money, creditcard, gateway_options)
+        expect(results.last[:destination]).to eq('foo')
+      end
+    end
+  end
+
+  describe '#create_profile' do
     context 'with an order that has a bill address' do
       let(:bill_address) {
         double('Spree::Address',
@@ -76,43 +95,6 @@ describe Spree::Gateway::StripeGateway do
 
         subject.create_profile payment
       end
-
-      # Regression test for #141
-      context "correcting the card type" do
-        before do
-          # We don't care about this method for these tests
-          subject.provider.stub(:store).and_return(double.as_null_object)
-        end
-
-        it "converts 'American Express' to 'american_express'" do
-          payment.source.cc_type = 'American Express'
-          subject.create_profile(payment)
-          expect(payment.source.cc_type).to eq('american_express')
-        end
-
-        it "converts 'Diners Club' to 'diners_club'" do
-          payment.source.cc_type = 'Diners Club'
-          subject.create_profile(payment)
-          expect(payment.source.cc_type).to eq('diners_club')
-        end
-
-        it "converts 'Visa' to 'visa'" do
-          payment.source.cc_type = 'Visa'
-          subject.create_profile(payment)
-          expect(payment.source.cc_type).to eq('visa')
-        end
-      end
-    end
-
-    context 'with a card represents payment_profile' do
-      let(:source) { Spree::CreditCard.new(gateway_payment_profile_id: 'tok_profileid') }
-      let(:bill_address) { nil }
-
-      it 'stores the profile_id as a card' do
-        subject.provider.should_receive(:store).with(source.gateway_payment_profile_id, anything).and_return double.as_null_object
-
-        subject.create_profile payment
-      end
     end
   end
 
@@ -137,9 +119,15 @@ describe Spree::Gateway::StripeGateway do
   end
 
   context 'capturing' do
+    let(:payment) do
+      double('payment').tap do |p|
+        p.stub(:amount).and_return(12.34)
+        p.stub(:response_code).and_return('response_code')
+      end
+    end
 
     after do
-      subject.capture(1234, 'response_code', {})
+      subject.capture(payment, 'credit card', {})
     end
 
     it 'convert the amount to cents' do

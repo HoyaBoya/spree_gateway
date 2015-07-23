@@ -2,12 +2,7 @@ module Spree
   class Gateway::StripeGateway < Gateway
     preference :secret_key, :string
     preference :publishable_key, :string
-
-    CARD_TYPE_MAPPING = {
-      'American Express' => 'american_express',
-      'Diners Club' => 'diners_club',
-      'Visa' => 'visa'
-    }
+    preference :destination, :string
 
     def method_type
       'stripe'
@@ -29,8 +24,8 @@ module Spree
       provider.authorize(*options_for_purchase_or_auth(money, creditcard, gateway_options))
     end
 
-    def capture(money, response_code, gateway_options)
-      provider.capture(money, response_code, gateway_options)
+    def capture(payment, creditcard, gateway_options)
+      provider.capture((payment.amount * 100).round, payment.response_code, gateway_options)
     end
 
     def credit(money, creditcard, response_code, gateway_options)
@@ -52,21 +47,13 @@ module Spree
         login: preferred_secret_key,
       }.merge! address_for(payment)
 
-      source = update_source!(payment.source)
-      if source.number.blank? && source.gateway_payment_profile_id.present?
-        creditcard = source.gateway_payment_profile_id
-      else
-        creditcard = source
-      end
-
-      response = provider.store(creditcard, options)
+      response = provider.store(payment.source, options)
       if response.success?
         payment.source.update_attributes!({
           cc_type: payment.source.cc_type, # side-effect of update_source!
           gateway_customer_profile_id: response.params['id'],
           gateway_payment_profile_id: response.params['default_source'] || response.params['default_card']
         })
-
       else
         payment.send(:gateway_error, response.message)
       end
@@ -80,10 +67,12 @@ module Spree
       options.merge(:login => preferred_secret_key)
     end
 
+
     def options_for_purchase_or_auth(money, creditcard, gateway_options)
       options = {}
       options[:description] = "Spree Order ID: #{gateway_options[:order_id]}"
       options[:currency] = gateway_options[:currency]
+      options[:destination] = preferred_destination if preferred_destination.present?
 
       if customer = creditcard.gateway_customer_profile_id
         options[:customer] = customer
@@ -116,11 +105,6 @@ module Spree
           end
         end
       end
-    end
-
-    def update_source!(source)
-      source.cc_type = CARD_TYPE_MAPPING[source.cc_type] if CARD_TYPE_MAPPING.include?(source.cc_type)
-      source
     end
   end
 end
